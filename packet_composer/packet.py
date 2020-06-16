@@ -24,7 +24,7 @@ class PacketFragment:
         self.fill_type = _fill_type
         return self
 
-    def print_java_field_declaration_using_builder(self):
+    def compose_java_field_declaration_using_builder(self):
         _field_size_build = f".fieldSize({self.field_size})" if self.field_size > 0 else ''
         _padding_type = f".paddingType({self.padding_type})" if self.padding_type else ''
         _fill_type = f".fillerType({self.fill_type})" if self.fill_type() else ''
@@ -34,7 +34,23 @@ class PacketFragment:
 
 class Packet:
     def __init__(self, _class_name: str, _packet_fragments: list):
-        self.class_name: str = _class_name
-        self.packet_fragments: list = _packet_fragments
+        self.class_name: str = _class_name if _class_name else ''
+        self.packet_fragments: list = _packet_fragments if _packet_fragments else []
 
-    def print_java_class(self):
+    def compose_java_class(self):
+        _annotations = f"@Data\n" \
+                       f"@Builder\n" \
+                       f"@NoArgsConstructor\n" \
+                       f"@AllArgsConstructor\n"
+        _field_declarations = ''
+        for _packet_fragment in self.packet_fragments:
+            _field_declarations = f"    {_packet_fragment.print_java_field_declaration_using_builder()}\n"
+
+        return f"{_annotations}" \
+               f"public class {self.class_name} {{" \
+               f"{_field_declarations}" \
+               f"}}"
+
+    def add_packet_fragment(self, packet_fragment: PacketFragment):
+        self.packet_fragments.append(packet_fragment)
+
