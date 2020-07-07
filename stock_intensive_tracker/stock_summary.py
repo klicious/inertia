@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-class DailyStockSummary:
+class StockSummary:
 
     def __init__(self, stock_code, date, volume, px, perf, trade):
         self.stock_code = stock_code
