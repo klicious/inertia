@@ -15,12 +15,12 @@ def play_games(_budget: int, _total_bet: int, _max_bet: int):
     for _i in range(0, 10000):
         bet_on_win = not bet_on_win
         # ends the game is there is no budget left
-        if _budget is 0:
+        if _budget == 0:
             return
 
         # place a new bet
         current_bet = 0
-        if len(_win_records) is not 0:
+        if len(_win_records) != 0:
             won_last_game = _win_records[-1]
             if won_last_game:
                 current_bet = 0
@@ -36,7 +36,7 @@ def play_games(_budget: int, _total_bet: int, _max_bet: int):
 
         wins_in_last_three_game = [win for win in _win_records[-3:] if win is True]
         # lost last three games, so reset the cycle
-        if len(wins_in_last_three_game) is 0 and len(_win_records) >= 3 and current_bet != bet:
+        if len(wins_in_last_three_game) == 0 and len(_win_records) >= 3 and current_bet != bet:
             _win_records.append(game_won)
             continue
 
