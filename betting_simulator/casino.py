@@ -46,6 +46,7 @@ class Player:
         self.cumulative_bet: float = 0
         self.max_value: float = budget
         self.max_value_draw_down_pcnt: float = 0
+        self.games_played: int = 0
 
     def __str__(self):
         return str(self.__dict__)
@@ -74,7 +75,7 @@ class Player:
             draw_down_pcnt = ((self.balance / self.max_value) - 1) * 100
             if draw_down_pcnt < self.max_value_draw_down_pcnt:
                 self.max_value_draw_down_pcnt = draw_down_pcnt
-
+        self.games_played += 1
     def bet(self) -> float:
         # bet = min(self.last_bet * 2, self.balance) if self.lost_last_game else self.balance * 0.01
         bet = min(self.last_bet * 2, self.balance) if self.lost_last_game else min(self.balance * 0.01, 1_000_000_000)
@@ -131,27 +132,32 @@ def simulate_with_house(win_rate: float = 0.5, tie_rate: float = 0, roi: float =
     game_repetition = 1_000_000
     house = House(win_rate=win_rate, tie_rate=tie_rate, return_on_investment=roi)
     player = Player(budget=1_000_000)
-    broken_rate = False
     for j in range(0, game_repetition):
         if player.is_broke():
-            # print(f"player is broke after {j} games @ win rate: {round(house.win_rate, 4)}. initial budget: {player.initial_budget} balance: {player.balance}")
-            broken_rate = True
-            print(f"After {game_repetition} game plays @ win rate {round(house.win_rate, 4)} with roi {roi} :: BROKEN == {broken_rate} :: {player}")
             break
         player.play(house=house)
     return house, player
 
 def simulate(roi: float = 2):
-    steps: int = 130
-    win_rates = [0.5674 + (x / 10_000) for x in range(0, steps)]
+    steps: int = 200
+    win_rates = [0.5545 + (x / 10_000) for x in range(0, steps)]
     with Pool() as pool:
         return pool.map(simulate_with_house, win_rates)
 
 
 if __name__ == "__main__":
-    for i in range(0, 100):
+    max_broken_rate: float = 0
+    for i in range(0, 1_000_000):
         print(f"Attempt {i + 1}...")
-        simulate()
+        simulation_results = simulate()
+        for simulation in simulation_results:
+            house, player = simulation
+            if player.is_broke() and house.win_rate > max_broken_rate:
+                max_broken_rate = house.win_rate
+                print(f"max broken rate updated to {max_broken_rate}")
+
+
+
 
 
 
