@@ -5,6 +5,8 @@ import random
 
 
 class House:
+    THOUSAND = 1_000
+    MILLION = 1_000_000
     BILLION = 1_000_000_000
 
     def __init__(
@@ -18,12 +20,12 @@ class House:
         self.win_rate: float = win_rate
         self.tie_rate: float = tie_rate
         self.return_on_investment: float = return_on_investment
-        self._win_range: int = int(House.BILLION * self.win_rate)
-        self._tie_range: int = int(House.BILLION * self.tie_rate) + self._win_range
-        self._lose_range: int = House.BILLION
+        self._win_range: int = int(House.MILLION * self.win_rate)
+        self._tie_range: int = int(House.MILLION * self.tie_rate) + self._win_range
+        self._lose_range: int = House.MILLION
 
     def play(self, bet: float) -> float:
-        r = random.uniform(0, House.BILLION)
+        r = random.SystemRandom().randint(1, House.MILLION)
         return bet * self.return_on_investment if r < self._win_range else bet if r < self._tie_range else 0
 
 
@@ -87,10 +89,9 @@ class Player:
             self.target_balance *= 2
             self.last_double_balanced_game = self.games_played
 
-
     def bet(self) -> float:
         # bet = min(self.last_bet * 2, self.balance) if self.lost_last_game else self.balance * 0.01
-        bet = min(self.last_bet * 2, self.balance) if self.lost_last_game else min(self.balance * 0.01, 1_000_000_000)
+        bet = min(self.last_bet * 2, self.balance) if self.lost_last_game else min(self.balance * 0.01, 100_000_000)
         self.cumulative_bet += bet
         bet = self._stop_loss(bet)
         self.balance -= bet
@@ -140,11 +141,10 @@ def simulate_games(repetition: int, house: House, player: Player):
     print(player)
 
 
-def simulate_with_house(win_rate: float = 0.5, tie_rate: float = 0, roi: float = 2):
-    game_repetition = 1_000_000
+def simulate_with_house(win_rate: float = 0.5, tie_rate: float = 0, roi: float = 2, game_size: int = 1_000_000):
     house = House(win_rate=win_rate, tie_rate=tie_rate, return_on_investment=roi)
     player = Player(budget=1_000_000)
-    for j in range(0, game_repetition):
+    for j in range(0, game_size):
         if player.is_broke():
             break
         player.play(house=house)
@@ -152,16 +152,16 @@ def simulate_with_house(win_rate: float = 0.5, tie_rate: float = 0, roi: float =
 
 
 def simulate_multiple_rates(roi: float = 2):
-    steps: int = 20
+    steps: int = 50
     # win_rates = [0.5682 + (x / 10_000) for x in range(0, steps)]
     win_rates = []
-    for i in range(0, 100):
-        win_rates += [0.5 + (x / 100) for x in range(0, steps)]
+    for i in range(0, 1000):
+        win_rates += [0.5 + (0.01 * x) for x in range(0, steps)]
     with Pool() as pool:
         return pool.map(simulate_with_house, win_rates)
 
 
-if __name__ == "__main__":
+def run_multiple_rates():
     rate_player_dict = {}
     max_broken_rate: float = 0
     for i in range(0, 1_000_000):
@@ -233,7 +233,11 @@ if __name__ == "__main__":
             "double_balance_game_length_std",
             "double_balance_game_length_mean",
         ]
-        with open('rate_to_mvdd_pnl_win_rate_50-70_roi2.csv', 'w') as csvfile:
+        with open('betting_simulation_result_rate_50-100_roi_2.csv', 'w') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=headers)
             writer.writeheader()
             writer.writerows(results)
+
+
+if __name__ == "__main__":
+    run_multiple_rates()
