@@ -162,7 +162,7 @@ def simulate_with_house(win_rate: float = 0.5, tie_rate: float = 0, roi: float =
 
 
 def simulate_multiple_rates(roi: float = 1):
-    steps: int = 50
+    steps: int = 30
     # win_rates = [0.5682 + (x / 10_000) for x in range(0, steps)]
     win_rates = []
     for i in range(0, 1000):
@@ -244,7 +244,7 @@ def run_multiple_rates():
             "double_balance_game_length_std",
             "double_balance_game_length_mean",
         ]
-        with open(f"betting_simulation_result_rate_50-100_roi_{roi}.csv", 'w') as csvfile:
+        with open(f"betting_simulation_result_rate_50-80_roi_{roi}.csv", 'w') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=headers)
             writer.writeheader()
             writer.writerows(results)
