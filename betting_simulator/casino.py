@@ -78,7 +78,6 @@ class Player:
         else:
             self._lost()
         self.balance += result
-        # post game data update
         # draw down calculation
         self._update_max_value_draw_down()
         # game count
@@ -225,7 +224,9 @@ def simulate_martingale_system_player(
     repetition: int = 1_000,
 ):
     players = [MartingaleSystemPlayer(budget=1_000_000) for _ in range(0, repetition)]
-    return [simulate_with_player(p, win_rate, tie_rate, roi, game_size) for p in players]
+    return [
+        simulate_with_player(p, win_rate, tie_rate, roi, game_size) for p in players
+    ]
 
 
 def simulate_steady_one_player(
@@ -236,7 +237,9 @@ def simulate_steady_one_player(
     repetition: int = 1_000,
 ):
     players = [SteadyOnePlayer(budget=1_000_000) for _ in range(0, repetition)]
-    return [simulate_with_player(p, win_rate, tie_rate, roi, game_size) for p in players]
+    return [
+        simulate_with_player(p, win_rate, tie_rate, roi, game_size) for p in players
+    ]
 
 
 def simulate_multiple_rates(simulation_func, roi: float = 1):
@@ -246,112 +249,136 @@ def simulate_multiple_rates(simulation_func, roi: float = 1):
         return pool.map(partial(simulation_func, roi=roi), win_rates)
 
 
+def simulate_and_save(
+    rate_player_dict: dict,
+    simulation_with_player_func,
+    roi: float,
+    player_name: str,
+    max_broken_rate: float,
+):
+    simulation_results = simulate_multiple_rates(simulation_with_player_func, roi)
+    for simulations in simulation_results:
+        for simulation in simulations:
+            _house, _player = simulation
+            if _player.is_broke() and _house.win_rate > max_broken_rate:
+                max_broken_rate = _house.win_rate
+                print(f"max broken rate updated to {max_broken_rate}")
+            players = rate_player_dict.get(_house.win_rate, [])
+            players.append(_player)
+            rate_player_dict[_house.win_rate] = players
+    results = []
+    for rate, players in rate_player_dict.items():
+        print("=========================================")
+        mvdds = [p.max_value_draw_down_pcnt for p in players]
+        mvdd_min = round(np.min(mvdds), 4)
+        mvdd_max = round(np.max(mvdds), 4)
+        mvdd_std = round(np.std(mvdds), 4)
+        mvdd_mean = round(np.mean(mvdds), 4)
+        print(
+            f"@ rate[{round(rate, 4)}] with sample size[{len(mvdds)}] :: MVDD :: min[{mvdd_min}] max[{mvdd_max}] std[{mvdd_std}] mean[{mvdd_mean}]"
+        )
+        pnls = [(p.balance / p.initial_budget) * 100 for p in players]
+        pnl_min = round(np.min(pnls), 4)
+        pnl_max = round(np.max(pnls), 4)
+        pnl_std = round(np.std(pnls), 4)
+        pnl_mean = round(np.mean(pnls), 4)
+        print(
+            f"@ rate[{round(rate, 4)}] with sample size[{len(pnls)}] :: PnL :: min[{pnl_min}] max[{pnl_max}] std[{pnl_std}] mean[{pnl_mean}]"
+        )
+        double_balance_game_lengths = sum(
+            [p.double_balance_game_lengths for p in players], []
+        )
+        if not double_balance_game_lengths:
+            double_balance_game_lengths.append(0)
+        double_balance_game_length_min = round(np.min(double_balance_game_lengths), 4)
+        double_balance_game_length_max = round(np.max(double_balance_game_lengths), 4)
+        double_balance_game_length_std = round(np.std(double_balance_game_lengths), 4)
+        double_balance_game_length_mean = round(np.mean(double_balance_game_lengths), 4)
+        double_balance_game_length_count = len(double_balance_game_lengths)
+        print(
+            f"@ rate[{round(rate, 4)}] with sample size[{len(pnls)}] :: Double game lengths :: min[{double_balance_game_length_min}] max[{double_balance_game_length_max}] std[{double_balance_game_length_std}] mean[{double_balance_game_length_mean}] count[{double_balance_game_length_count}]"
+        )
+        result = {
+            "sample_size": len(mvdds),
+            "rate": round(rate, 4),
+            "mvdd_min": mvdd_min,
+            "mvdd_max": mvdd_max,
+            "mvdd_std": mvdd_std,
+            "mvdd_mean": mvdd_mean,
+            "pnl_min": pnl_min,
+            "pnl_max": pnl_max,
+            "pnl_std": pnl_std,
+            "pnl_mean": pnl_mean,
+            "double_balance_game_length_min": double_balance_game_length_min,
+            "double_balance_game_length_max": double_balance_game_length_max,
+            "double_balance_game_length_std": double_balance_game_length_std,
+            "double_balance_game_length_mean": double_balance_game_length_mean,
+        }
+        results.append(result)
+    headers = [
+        "sample_size",
+        "rate",
+        "mvdd_min",
+        "mvdd_max",
+        "mvdd_std",
+        "mvdd_mean",
+        "pnl_min",
+        "pnl_max",
+        "pnl_std",
+        "pnl_mean",
+        "double_balance_game_length_min",
+        "double_balance_game_length_max",
+        "double_balance_game_length_std",
+        "double_balance_game_length_mean",
+    ]
+    with open(
+        f"20221006_{player_name.replace(' ', '_')}_rate_50-80_roi_{roi}.csv", "w"
+    ) as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(results)
+
+
 def run_multiple_rates():
-    rate_player_dict = {}
-    max_broken_rate, roi = 0, 3
-    player_name: str = ""
+    max_broken_rate = 0
+    rois = [1, 2, 3]
+    simulation_functions = [
+        simulate_martingale_system_player,
+        simulate_steady_one_player,
+    ]
+    player_names: dict = {
+        simulate_martingale_system_player: MartingaleSystemPlayer().name,
+        simulate_steady_one_player: SteadyOnePlayer().name,
+    }
+    simulation_func_roi_rate_player_dict = {}
     for index in range(0, 1_000_000):
-        start_time: datetime = datetime.now()
-        attempt = index + 1
-        print(f"Attempt {attempt} @ {start_time} ...")
-        simulation_results = simulate_multiple_rates(simulate_steady_one_player, roi)
-        for simulations in simulation_results:
-            for simulation in simulations:
-                _house, _player = simulation
-                if not player_name:
-                    player_name = _player.name
-                if _player.is_broke() and _house.win_rate > max_broken_rate:
-                    max_broken_rate = _house.win_rate
-                    print(f"max broken rate updated to {max_broken_rate}")
-                players = (
-                    rate_player_dict[_house.win_rate]
-                    if _house.win_rate in rate_player_dict
-                    else []
+        for simulation_function in simulation_functions:
+            roi_rate_player_dict = simulation_func_roi_rate_player_dict.get(
+                simulation_function, {}
+            )
+            player_name = player_names.get(simulation_function)
+            print(player_name)
+            for roi in rois:
+                rate_player_dict = roi_rate_player_dict.get(roi, {})
+                start_time: datetime = datetime.now()
+                attempt = index + 1
+                print(
+                    f"Attempt {attempt} @ {start_time} on {simulation_function.__name__} with roi {roi} ..."
                 )
-                players.append(_player)
-                rate_player_dict[_house.win_rate] = players
-        results = []
-        for rate, players in rate_player_dict.items():
-            print("=========================================")
-            mvdds = [p.max_value_draw_down_pcnt for p in players]
-            mvdd_min = round(np.min(mvdds), 4)
-            mvdd_max = round(np.max(mvdds), 4)
-            mvdd_std = round(np.std(mvdds), 4)
-            mvdd_mean = round(np.mean(mvdds), 4)
-            print(
-                f"@ rate[{round(rate, 4)}] with sample size[{len(mvdds)}] :: MVDD :: min[{mvdd_min}] max[{mvdd_max}] std[{mvdd_std}] mean[{mvdd_mean}]"
-            )
-            pnls = [(p.balance / p.initial_budget) * 100 for p in players]
-            pnl_min = round(np.min(pnls), 4)
-            pnl_max = round(np.max(pnls), 4)
-            pnl_std = round(np.std(pnls), 4)
-            pnl_mean = round(np.mean(pnls), 4)
-            print(
-                f"@ rate[{round(rate, 4)}] with sample size[{len(pnls)}] :: PnL :: min[{pnl_min}] max[{pnl_max}] std[{pnl_std}] mean[{pnl_mean}]"
-            )
-            double_balance_game_lengths = sum(
-                [p.double_balance_game_lengths for p in players], []
-            )
-            if not double_balance_game_lengths:
-                double_balance_game_lengths.append(0)
-            double_balance_game_length_min = round(
-                np.min(double_balance_game_lengths), 4
-            )
-            double_balance_game_length_max = round(
-                np.max(double_balance_game_lengths), 4
-            )
-            double_balance_game_length_std = round(
-                np.std(double_balance_game_lengths), 4
-            )
-            double_balance_game_length_mean = round(
-                np.mean(double_balance_game_lengths), 4
-            )
-            double_balance_game_length_count = len(double_balance_game_lengths)
-            print(
-                f"@ rate[{round(rate, 4)}] with sample size[{len(pnls)}] :: Double game lengths :: min[{double_balance_game_length_min}] max[{double_balance_game_length_max}] std[{double_balance_game_length_std}] mean[{double_balance_game_length_mean}] count[{double_balance_game_length_count}]"
-            )
-            result = {
-                "sample_size": len(mvdds),
-                "rate": round(rate, 4),
-                "mvdd_min": mvdd_min,
-                "mvdd_max": mvdd_max,
-                "mvdd_std": mvdd_std,
-                "mvdd_mean": mvdd_mean,
-                "pnl_min": pnl_min,
-                "pnl_max": pnl_max,
-                "pnl_std": pnl_std,
-                "pnl_mean": pnl_mean,
-                "double_balance_game_length_min": double_balance_game_length_min,
-                "double_balance_game_length_max": double_balance_game_length_max,
-                "double_balance_game_length_std": double_balance_game_length_std,
-                "double_balance_game_length_mean": double_balance_game_length_mean,
-            }
-            results.append(result)
-        headers = [
-            "sample_size",
-            "rate",
-            "mvdd_min",
-            "mvdd_max",
-            "mvdd_std",
-            "mvdd_mean",
-            "pnl_min",
-            "pnl_max",
-            "pnl_std",
-            "pnl_mean",
-            "double_balance_game_length_min",
-            "double_balance_game_length_max",
-            "double_balance_game_length_std",
-            "double_balance_game_length_mean",
-        ]
-        with open(
-            f"{player_name.replace(' ', '_')}_rate_50-80_roi_{roi}_20221005.csv", "w"
-        ) as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=headers)
-            writer.writeheader()
-            writer.writerows(results)
-        end_time: datetime = datetime.now()
-        simulation_timedelta: timedelta = end_time - start_time
-        print(f"Attempt {attempt} took [{simulation_timedelta}] to complete")
+                simulate_and_save(
+                    rate_player_dict,
+                    simulate_steady_one_player,
+                    roi,
+                    player_name,
+                    max_broken_rate,
+                )
+                end_time: datetime = datetime.now()
+                simulation_timedelta: timedelta = end_time - start_time
+                print(f"Attempt {attempt} took [{simulation_timedelta}] to complete")
+                roi_rate_player_dict[roi] = rate_player_dict
+            simulation_func_roi_rate_player_dict[
+                simulation_function
+            ] = roi_rate_player_dict
 
 
 if __name__ == "__main__":
@@ -366,7 +393,3 @@ if __name__ == "__main__":
     #     print(f"time delta: {delta}, player mvdd: {player.max_value_draw_down_pcnt} games played [{player.games_played}] is broke[{player.is_broke()}]")
     # mean = np.mean(deltas)
     # print(f"Average time delta: {mean}")
-
-
-
-

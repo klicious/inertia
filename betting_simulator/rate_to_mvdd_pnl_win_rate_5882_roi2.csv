@@ -1,2 +1,0 @@
-sample_size,rate,mvdd_min,mvdd_max,mvdd_std,mvdd_mean,pnl_min,pnl_max,pnl_std,pnl_mean,double_balance_game_length_min,double_balance_game_length_max,double_balance_game_length_std,double_balance_game_length_mean
-10000,0.5882,-80.8521,-16.3,9.2711,-40.7998,148261290401.6739,314960405181.9322,9070589822.3379,247524894981.1488,24,584696,85130.6454,27993.8146
