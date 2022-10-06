@@ -222,9 +222,10 @@ def simulate_martingale_system_player(
     tie_rate: float = 0,
     roi: float = 1,
     game_size: int = 1_000_000,
+    repetition: int = 1_000,
 ):
-    player = MartingaleSystemPlayer(budget=1_000_000)
-    return simulate_with_player(player, win_rate, tie_rate, roi, game_size)
+    players = [MartingaleSystemPlayer(budget=1_000_000) for _ in range(0, repetition)]
+    return [simulate_with_player(p, win_rate, tie_rate, roi, game_size) for p in players]
 
 
 def simulate_steady_one_player(
@@ -232,16 +233,15 @@ def simulate_steady_one_player(
     tie_rate: float = 0,
     roi: float = 1,
     game_size: int = 1_000_000,
+    repetition: int = 1_000,
 ):
-    player = SteadyOnePlayer(budget=1_000_000)
-    return simulate_with_player(player, win_rate, tie_rate, roi, game_size)
+    players = [SteadyOnePlayer(budget=1_000_000) for _ in range(0, repetition)]
+    return [simulate_with_player(p, win_rate, tie_rate, roi, game_size) for p in players]
 
 
 def simulate_multiple_rates(simulation_func, roi: float = 1):
     steps: int = 30
-    win_rates = []
-    for i in range(0, 100):
-        win_rates += [0.5 + (0.01 * x) for x in range(0, steps)]
+    win_rates = [0.5 + (0.01 * x) for x in range(0, steps)]
     with Pool() as pool:
         return pool.map(partial(simulation_func, roi=roi), win_rates)
 
@@ -250,24 +250,26 @@ def run_multiple_rates():
     rate_player_dict = {}
     max_broken_rate, roi = 0, 3
     player_name: str = ""
-    for i in range(0, 1_000_000):
+    for index in range(0, 1_000_000):
         start_time: datetime = datetime.now()
-        print(f"Attempt {i + 1} @ {start_time} ...")
+        attempt = index + 1
+        print(f"Attempt {attempt} @ {start_time} ...")
         simulation_results = simulate_multiple_rates(simulate_steady_one_player, roi)
-        for simulation in simulation_results:
-            house, player = simulation
-            if not player_name:
-                player_name = player.name
-            if player.is_broke() and house.win_rate > max_broken_rate:
-                max_broken_rate = house.win_rate
-                print(f"max broken rate updated to {max_broken_rate}")
-            players = (
-                rate_player_dict[house.win_rate]
-                if house.win_rate in rate_player_dict
-                else []
-            )
-            players.append(player)
-            rate_player_dict[house.win_rate] = players
+        for simulations in simulation_results:
+            for simulation in simulations:
+                _house, _player = simulation
+                if not player_name:
+                    player_name = _player.name
+                if _player.is_broke() and _house.win_rate > max_broken_rate:
+                    max_broken_rate = _house.win_rate
+                    print(f"max broken rate updated to {max_broken_rate}")
+                players = (
+                    rate_player_dict[_house.win_rate]
+                    if _house.win_rate in rate_player_dict
+                    else []
+                )
+                players.append(_player)
+                rate_player_dict[_house.win_rate] = players
         results = []
         for rate, players in rate_player_dict.items():
             print("=========================================")
@@ -349,8 +351,22 @@ def run_multiple_rates():
             writer.writerows(results)
         end_time: datetime = datetime.now()
         simulation_timedelta: timedelta = end_time - start_time
-        print(f"Attempt {i} took [{simulation_timedelta}] to complete")
+        print(f"Attempt {attempt} took [{simulation_timedelta}] to complete")
 
 
 if __name__ == "__main__":
     run_multiple_rates()
+    # deltas = []
+    # for i in range(0, 100):
+    #     start_timestamp: float = datetime.now().timestamp()
+    #     house, player = simulate_martingale_system_player(win_rate=0.8)
+    #     end_timestamp: float = datetime.now().timestamp()
+    #     delta: float = end_timestamp - start_timestamp
+    #     deltas.append(delta)
+    #     print(f"time delta: {delta}, player mvdd: {player.max_value_draw_down_pcnt} games played [{player.games_played}] is broke[{player.is_broke()}]")
+    # mean = np.mean(deltas)
+    # print(f"Average time delta: {mean}")
+
+
+
+
