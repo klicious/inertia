@@ -387,12 +387,12 @@ def run_multiple_rates_on_players_and_rois():
 
 
 if __name__ == "__main__":
-    run_multiple_rates_on_players_and_rois()
+    # run_multiple_rates_on_players_and_rois()
 
     rate_player_dict: dict = {}
     roi = 1
-    player_name = MartingaleSystemPlayer().name
-    simulation_function = simulate_martingale_system_player
+    player_name = SteadyOnePlayer().name
+    simulation_function = simulate_steady_one_player
     run_multiple_rates_on_player_and_roi(
         1_000_000, rate_player_dict, simulation_function, roi, player_name
     )
