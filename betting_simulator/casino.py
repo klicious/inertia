@@ -100,8 +100,8 @@ class Player:
         self.max_losing_streak = max(self.max_losing_streak, self.losing_streak)
         self.lost_last_game = True
 
-    def bet(self, roi: float = 1) -> float:
-        bet = self._required_bet(roi)
+    def bet(self, _roi: float = 1) -> float:
+        bet = self._required_bet(_roi)
         bet = self._stop_loss(bet)
         if not self.lost_last_game:
             self.initial_bet = bet
@@ -156,23 +156,11 @@ class SteadyOnePlayer(Player):
         super().__init__(budget)
         self.name: str = "Steady one player"
 
-    def bet(self, roi: float = 1) -> float:
-        bet = self._required_bet(roi)
-        bet = self._stop_loss(bet)
-        if not self.lost_last_game:
-            self.initial_bet = bet
-        self.cumulative_bet += bet
-        self.balance -= bet
-        self.last_bet = bet
-        if self.max_bet < bet:
-            self.max_bet = bet
-        return bet
-
-    def _required_bet(self, roi: float = 1) -> float:
+    def _required_bet(self, _roi: float = 1) -> float:
         return min(self.balance * 0.01, 100_000_000)
 
     def is_broke(self) -> bool:
-        return self.balance <= self.initial_budget * 0.9
+        return self.balance <= self.initial_budget * 0.5
 
 
 class MartingaleSystemPlayer(Player):
@@ -199,9 +187,9 @@ class MartingaleSystemPlayer(Player):
 
 def simulate_games(repetition: int, house: House, player: Player):
     for j in range(0, repetition):
+        player.play(house=house)
         if player.is_broke():
             break
-        player.play(house=house)
     return house, player
 
 
@@ -254,15 +242,11 @@ def simulate_and_save(
     simulation_with_player_func,
     roi: float,
     player_name: str,
-    max_broken_rate: float,
 ):
     simulation_results = simulate_multiple_rates(simulation_with_player_func, roi)
     for simulations in simulation_results:
         for simulation in simulations:
             _house, _player = simulation
-            if _player.is_broke() and _house.win_rate > max_broken_rate:
-                max_broken_rate = _house.win_rate
-                print(f"max broken rate updated to {max_broken_rate}")
             players = rate_player_dict.get(_house.win_rate, [])
             players.append(_player)
             rate_player_dict[_house.win_rate] = players
@@ -339,8 +323,31 @@ def simulate_and_save(
         writer.writerows(results)
 
 
-def run_multiple_rates():
-    max_broken_rate = 0
+def run_multiple_rates_on_player_and_roi(
+    _repetition: int,
+    _rate_player_dict: dict,
+    _simulation_function,
+    _roi: float,
+    _player_name: str,
+):
+    for index in range(0, _repetition):
+        start_time: datetime = datetime.now()
+        attempt = index + 1
+        print(
+            f"Attempt {attempt} @ {start_time} on {_simulation_function.__name__} with roi {_roi} ..."
+        )
+        simulate_and_save(
+            _rate_player_dict,
+            simulate_steady_one_player,
+            _roi,
+            _player_name,
+        )
+        end_time: datetime = datetime.now()
+        simulation_timedelta: timedelta = end_time - start_time
+        print(f"Attempt {attempt} took [{simulation_timedelta}] to complete")
+
+
+def run_multiple_rates_on_players_and_rois():
     rois = [1, 2, 3]
     simulation_functions = [
         simulate_martingale_system_player,
@@ -357,7 +364,6 @@ def run_multiple_rates():
                 simulation_function, {}
             )
             player_name = player_names.get(simulation_function)
-            print(player_name)
             for roi in rois:
                 rate_player_dict = roi_rate_player_dict.get(roi, {})
                 start_time: datetime = datetime.now()
@@ -370,7 +376,6 @@ def run_multiple_rates():
                     simulate_steady_one_player,
                     roi,
                     player_name,
-                    max_broken_rate,
                 )
                 end_time: datetime = datetime.now()
                 simulation_timedelta: timedelta = end_time - start_time
@@ -382,7 +387,16 @@ def run_multiple_rates():
 
 
 if __name__ == "__main__":
-    run_multiple_rates()
+    run_multiple_rates_on_players_and_rois()
+
+    rate_player_dict: dict = {}
+    roi = 1
+    player_name = MartingaleSystemPlayer().name
+    simulation_function = simulate_martingale_system_player
+    run_multiple_rates_on_player_and_roi(
+        1_000_000, rate_player_dict, simulation_function, roi, player_name
+    )
+
     # deltas = []
     # for i in range(0, 100):
     #     start_timestamp: float = datetime.now().timestamp()
