@@ -2,8 +2,9 @@ import csv
 import random
 from datetime import datetime, timedelta
 from functools import partial
-import parmap
+
 import numpy as np
+import parmap
 
 
 class House:
@@ -100,7 +101,7 @@ class Player:
         self.lost_last_game = True
 
     def bet(self, _roi: float = 1) -> float:
-        bet = self._required_bet(_roi)
+        bet = max(self._required_bet(_roi), self.balance)
         bet = self._stop_loss(bet)
         if not self.lost_last_game:
             self.initial_bet = bet
@@ -180,8 +181,7 @@ class MartingaleSystemPlayer(Player):
         return self.balance <= self.initial_budget * 0.1
 
 
-class MartingaleSystemPlayerStopLoss(MartingaleSystemPlayer):
-
+class MartingaleSystemStopLossPlayer(MartingaleSystemPlayer):
     def __init__(self, budget: float = 0) -> None:
         super().__init__(budget)
         self.name: str = "Martingale system stop-loss player"
@@ -221,6 +221,21 @@ def simulate_martingale_system_player(
     repetition: int = 1_000,
 ):
     players = [MartingaleSystemPlayer(budget=1_000_000) for _ in range(0, repetition)]
+    return [
+        simulate_with_player(p, win_rate, tie_rate, roi, game_size) for p in players
+    ]
+
+
+def simulate_martingale_stoploss_player(
+    win_rate: float = 0.5,
+    tie_rate: float = 0,
+    roi: float = 1,
+    game_size: int = 1_000_000,
+    repetition: int = 1_000,
+):
+    players = [
+        MartingaleSystemStopLossPlayer(budget=1_000_000) for _ in range(0, repetition)
+    ]
     return [
         simulate_with_player(p, win_rate, tie_rate, roi, game_size) for p in players
     ]
@@ -358,13 +373,15 @@ def run_multiple_rates_on_player_and_roi(
 
 
 def run_multiple_rates_on_players_and_rois():
-    rois = [1, 2, 3]
+    rois = [1]
     simulation_functions = [
         simulate_martingale_system_player,
-        # simulate_steady_one_player,
+        simulate_martingale_stoploss_player,
+        simulate_steady_one_player,
     ]
     player_names: dict = {
         simulate_martingale_system_player: MartingaleSystemPlayer().name,
+        simulate_martingale_stoploss_player: MartingaleSystemStopLossPlayer().name,
         simulate_steady_one_player: SteadyOnePlayer().name,
     }
     simulation_func_roi_rate_player_dict = {}
