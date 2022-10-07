@@ -2,8 +2,7 @@ import csv
 import random
 from datetime import datetime, timedelta
 from functools import partial
-from multiprocessing import Pool
-
+import parmap
 import numpy as np
 
 
@@ -175,18 +174,28 @@ class MartingaleSystemPlayer(Player):
         return required_return / roi
 
     def _stop_loss(self, bet: float) -> float:
+        return bet
+
+    def is_broke(self) -> bool:
+        return self.balance <= self.initial_budget * 0.1
+
+
+class MartingaleSystemPlayerStopLoss(MartingaleSystemPlayer):
+
+    def __init__(self, budget: float = 0) -> None:
+        super().__init__(budget)
+        self.name: str = "Martingale system stop-loss player"
+
+    def _stop_loss(self, bet: float) -> float:
         max_bet = self.balance * 0.1
         if (self.cumulative_bet + bet) <= max_bet:
             return bet
         self._reset_bet()
         return max_bet
 
-    def is_broke(self) -> bool:
-        return self.balance <= self.initial_budget * 0.1
-
 
 def simulate_games(repetition: int, house: House, player: Player):
-    for j in range(0, repetition):
+    for _ in range(0, repetition):
         player.play(house=house)
         if player.is_broke():
             break
@@ -232,9 +241,10 @@ def simulate_steady_one_player(
 
 def simulate_multiple_rates(simulation_func, roi: float = 1):
     steps: int = 30
-    win_rates = [0.5 + (0.01 * x) for x in range(0, steps)]
-    with Pool() as pool:
-        return pool.map(partial(simulation_func, roi=roi), win_rates)
+    win_rates = []
+    for _ in range(0, 10):
+        win_rates += [0.5 + (0.01 * x) for x in range(0, steps)]
+    return parmap.map(partial(simulation_func, roi=roi), win_rates, pm_pbar=True)
 
 
 def simulate_and_save(
@@ -351,7 +361,7 @@ def run_multiple_rates_on_players_and_rois():
     rois = [1, 2, 3]
     simulation_functions = [
         simulate_martingale_system_player,
-        simulate_steady_one_player,
+        # simulate_steady_one_player,
     ]
     player_names: dict = {
         simulate_martingale_system_player: MartingaleSystemPlayer().name,
@@ -373,7 +383,7 @@ def run_multiple_rates_on_players_and_rois():
                 )
                 simulate_and_save(
                     rate_player_dict,
-                    simulate_steady_one_player,
+                    simulation_function,
                     roi,
                     player_name,
                 )
@@ -389,13 +399,13 @@ def run_multiple_rates_on_players_and_rois():
 if __name__ == "__main__":
     run_multiple_rates_on_players_and_rois()
 
-    rate_player_dict: dict = {}
-    roi = 1
-    player_name = MartingaleSystemPlayer().name
-    simulation_function = simulate_martingale_system_player
-    run_multiple_rates_on_player_and_roi(
-        1_000_000, rate_player_dict, simulation_function, roi, player_name
-    )
+    # rate_player_dict: dict = {}
+    # roi = 1
+    # player_name = SteadyOnePlayer().name
+    # simulation_function = simulate_steady_one_player
+    # run_multiple_rates_on_player_and_roi(
+    #     1_000_000, rate_player_dict, simulation_function, roi, player_name
+    # )
 
     # deltas = []
     # for i in range(0, 100):
