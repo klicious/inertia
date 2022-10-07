@@ -232,7 +232,7 @@ def simulate_martingale_system_player(
     tie_rate: float = 0,
     roi: float = 1,
     game_size: int = 1_000_000,
-    repetition: int = 2,
+    repetition: int = 1_000,
 ):
     players = [MartingaleSystemPlayer(budget=1_000_000) for _ in range(0, repetition)]
     return [
@@ -245,7 +245,7 @@ def simulate_martingale_stoploss_player(
     tie_rate: float = 0,
     roi: float = 1,
     game_size: int = 1_000_000,
-    repetition: int = 2,
+    repetition: int = 1_000,
 ):
     players = [
         MartingaleSystemStopLossPlayer(budget=1_000_000) for _ in range(0, repetition)
@@ -260,7 +260,7 @@ def simulate_steady_one_player(
     tie_rate: float = 0,
     roi: float = 1,
     game_size: int = 1_000_000,
-    repetition: int = 2,
+    repetition: int = 1_000,
 ):
     players = [SteadyOnePlayer(budget=1_000_000) for _ in range(0, repetition)]
     return [
@@ -271,7 +271,7 @@ def simulate_steady_one_player(
 def simulate_multiple_rates(simulation_func, roi: float = 1):
     steps: int = 30
     win_rates = []
-    for _ in range(0, 2):
+    for _ in range(0, 10):
         win_rates += [0.5 + (0.01 * x) for x in range(0, steps)]
     return parmap.map(partial(simulation_func, roi=roi), win_rates, pm_pbar=True)
 
