@@ -1,10 +1,12 @@
 import csv
+import os
 import random
 from datetime import datetime, timedelta
 from functools import partial
 
 import numpy as np
 import parmap
+from tqdm import tqdm
 
 
 class House:
@@ -101,7 +103,7 @@ class Player:
         self.lost_last_game = True
 
     def bet(self, _roi: float = 1) -> float:
-        bet = max(self._required_bet(_roi), self.balance)
+        bet = min(self._required_bet(_roi), self.balance)
         bet = self._stop_loss(bet)
         if not self.lost_last_game:
             self.initial_bet = bet
@@ -194,12 +196,24 @@ class MartingaleSystemStopLossPlayer(MartingaleSystemPlayer):
         return max_bet
 
 
-def simulate_games(repetition: int, house: House, player: Player):
+def track_game_balances(repetition: int, house: House, player: Player):
+    balances = [player.balance]
     for _ in range(0, repetition):
         player.play(house=house)
+        balances.append(player.balance)
         if player.is_broke():
             break
-    return house, player
+    return balances
+
+
+def simulate_games(repetition: int, house: House, player: Player):
+    _balances = [player.balance]
+    for _ in range(0, repetition):
+        player.play(house=house)
+        _balances.append(player.balance)
+        if player.is_broke():
+            break
+    return house, player, _balances
 
 
 def simulate_with_player(
@@ -218,7 +232,7 @@ def simulate_martingale_system_player(
     tie_rate: float = 0,
     roi: float = 1,
     game_size: int = 1_000_000,
-    repetition: int = 1_000,
+    repetition: int = 2,
 ):
     players = [MartingaleSystemPlayer(budget=1_000_000) for _ in range(0, repetition)]
     return [
@@ -231,7 +245,7 @@ def simulate_martingale_stoploss_player(
     tie_rate: float = 0,
     roi: float = 1,
     game_size: int = 1_000_000,
-    repetition: int = 1_000,
+    repetition: int = 2,
 ):
     players = [
         MartingaleSystemStopLossPlayer(budget=1_000_000) for _ in range(0, repetition)
@@ -246,7 +260,7 @@ def simulate_steady_one_player(
     tie_rate: float = 0,
     roi: float = 1,
     game_size: int = 1_000_000,
-    repetition: int = 1_000,
+    repetition: int = 2,
 ):
     players = [SteadyOnePlayer(budget=1_000_000) for _ in range(0, repetition)]
     return [
@@ -257,24 +271,12 @@ def simulate_steady_one_player(
 def simulate_multiple_rates(simulation_func, roi: float = 1):
     steps: int = 30
     win_rates = []
-    for _ in range(0, 10):
+    for _ in range(0, 2):
         win_rates += [0.5 + (0.01 * x) for x in range(0, steps)]
     return parmap.map(partial(simulation_func, roi=roi), win_rates, pm_pbar=True)
 
 
-def simulate_and_save(
-    rate_player_dict: dict,
-    simulation_with_player_func,
-    roi: float,
-    player_name: str,
-):
-    simulation_results = simulate_multiple_rates(simulation_with_player_func, roi)
-    for simulations in simulation_results:
-        for simulation in simulations:
-            _house, _player = simulation
-            players = rate_player_dict.get(_house.win_rate, [])
-            players.append(_player)
-            rate_player_dict[_house.win_rate] = players
+def _write_game_results_to_file(rate_player_dict: dict, player_name: str, roi: float):
     results = []
     for rate, players in rate_player_dict.items():
         print("=========================================")
@@ -286,7 +288,9 @@ def simulate_and_save(
         print(
             f"@ rate[{round(rate, 4)}] with sample size[{len(mvdds)}] :: MVDD :: min[{mvdd_min}] max[{mvdd_max}] std[{mvdd_std}] mean[{mvdd_mean}]"
         )
-        pnls = [(p.balance / p.initial_budget) * 100 for p in players]
+        pnls = [
+            ((p.balance - p.initial_budget) / p.initial_budget) * 100 for p in players
+        ]
         pnl_min = round(np.min(pnls), 4)
         pnl_max = round(np.max(pnls), 4)
         pnl_std = round(np.std(pnls), 4)
@@ -341,15 +345,75 @@ def simulate_and_save(
         "double_balance_game_length_mean",
     ]
     with open(
-        f"20221006_{player_name.replace(' ', '_')}_rate_50-80_roi_{roi}.csv", "w"
+        f"{datetime.today().strftime('%Y%m%d')}_{player_name.replace(' ', '_')}_rate_50-80_roi_{roi}.csv",
+        "w",
     ) as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=headers)
         writer.writeheader()
         writer.writerows(results)
 
 
+def _write_game_balances_tract_to_file(
+    rate_index_balances_dict: dict, player_name: str, roi: float
+):
+    headers = ["index", "min", "max", "mean", "std"]
+    for rate, index_balances_dict in tqdm(rate_index_balances_dict.items()):
+        rows = [
+            {
+                "index": i,
+                "min": np.min(b),
+                "max": np.max(b),
+                "mean": np.mean(b),
+                "std": np.std(b),
+            }
+            for i, b in index_balances_dict.items()
+        ]
+        today_str = datetime.today().strftime("%Y%m%d")
+        directory = os.path.join("game_balances", today_str)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        filename = os.path.join(
+            directory,
+            f"{today_str}_{player_name.replace(' ', '_')}_rate_{rate}_roi_{roi}_game_balances.csv",
+        )
+        with open(
+            filename,
+            "w",
+        ) as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=headers)
+            writer.writeheader()
+            writer.writerows(rows)
+
+
+def simulate_and_save(
+    rate_index_balances_dict: dict,
+    rate_player_dict: dict,
+    simulation_with_player_func,
+    roi: float,
+    player_name: str,
+):
+    simulation_results = simulate_multiple_rates(simulation_with_player_func, roi)
+    for simulations in simulation_results:
+        for simulation in simulations:
+            _house, _player, _balances = simulation
+            win_rate = _house.win_rate
+            players = rate_player_dict.get(win_rate, [])
+            players.append(_player)
+            rate_player_dict[win_rate] = players
+
+            index_balances_dict = rate_index_balances_dict.get(win_rate, {})
+            for index, balance in enumerate(_balances):
+                index_balances = index_balances_dict.get(index, [])
+                index_balances.append(balance)
+                index_balances_dict[index] = index_balances
+            rate_index_balances_dict[win_rate] = index_balances_dict
+    _write_game_results_to_file(rate_player_dict, player_name, roi)
+    _write_game_balances_tract_to_file(rate_index_balances_dict, player_name, roi)
+
+
 def run_multiple_rates_on_player_and_roi(
     _repetition: int,
+    _rate_index_balances_dict: dict,
     _rate_player_dict: dict,
     _simulation_function,
     _roi: float,
@@ -362,6 +426,7 @@ def run_multiple_rates_on_player_and_roi(
             f"Attempt {attempt} @ {start_time} on {_simulation_function.__name__} with roi {_roi} ..."
         )
         simulate_and_save(
+            _rate_index_balances_dict,
             _rate_player_dict,
             simulate_steady_one_player,
             _roi,
@@ -373,7 +438,7 @@ def run_multiple_rates_on_player_and_roi(
 
 
 def run_multiple_rates_on_players_and_rois():
-    rois = [1]
+    rois = [1, 2, 3]
     simulation_functions = [
         simulate_martingale_system_player,
         simulate_martingale_stoploss_player,
@@ -385,20 +450,28 @@ def run_multiple_rates_on_players_and_rois():
         simulate_steady_one_player: SteadyOnePlayer().name,
     }
     simulation_func_roi_rate_player_dict = {}
+    simulation_func_roi_rate_index_balances_dict = {}
     for index in range(0, 1_000_000):
         for simulation_function in simulation_functions:
             roi_rate_player_dict = simulation_func_roi_rate_player_dict.get(
                 simulation_function, {}
             )
+            roi_rate_index_balances_dict = (
+                simulation_func_roi_rate_index_balances_dict.get(
+                    simulation_function, {}
+                )
+            )
             player_name = player_names.get(simulation_function)
             for roi in rois:
                 rate_player_dict = roi_rate_player_dict.get(roi, {})
+                rate_index_balances_dict = roi_rate_index_balances_dict.get(roi, {})
                 start_time: datetime = datetime.now()
                 attempt = index + 1
                 print(
                     f"Attempt {attempt} @ {start_time} on {simulation_function.__name__} with roi {roi} ..."
                 )
                 simulate_and_save(
+                    rate_index_balances_dict,
                     rate_player_dict,
                     simulation_function,
                     roi,
@@ -408,9 +481,13 @@ def run_multiple_rates_on_players_and_rois():
                 simulation_timedelta: timedelta = end_time - start_time
                 print(f"Attempt {attempt} took [{simulation_timedelta}] to complete")
                 roi_rate_player_dict[roi] = rate_player_dict
+                roi_rate_index_balances_dict[roi] = rate_index_balances_dict
             simulation_func_roi_rate_player_dict[
                 simulation_function
             ] = roi_rate_player_dict
+            simulation_func_roi_rate_index_balances_dict[
+                simulation_function
+            ] = roi_rate_index_balances_dict
 
 
 if __name__ == "__main__":
