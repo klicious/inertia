@@ -16,10 +16,10 @@ class House:
     BILLION = 1_000_000_000
 
     def __init__(
-            self,
-            win_rate: float,
-            tie_rate: float,
-            return_on_investment: float,
+        self,
+        win_rate: float,
+        tie_rate: float,
+        return_on_investment: float,
     ) -> None:
         if win_rate + tie_rate > 1:
             raise Exception("win rate + tie rate cannot exceed 1")
@@ -43,8 +43,8 @@ class House:
 
 class Player:
     def __init__(
-            self,
-            budget: float = 0,
+        self,
+        budget: float = 0,
     ) -> None:
         self.name: str = "not applicable"
         self.initial_budget: float = budget
@@ -211,29 +211,29 @@ def simulate_games(repetition: int, house: House, player: Player):
     _balances = [player.balance]
     for _ in range(0, repetition):
         player.play(house=house)
-        _balances.append(player.balance)
+        # _balances.append(player.balance)
         if player.is_broke():
             break
     return house, player, _balances
 
 
 def simulate_with_player(
-        player: Player,
-        win_rate: float = 0.5,
-        tie_rate: float = 0,
-        roi: float = 1,
-        game_size: int = 1_000_000,
+    player: Player,
+    win_rate: float = 0.5,
+    tie_rate: float = 0,
+    roi: float = 1,
+    game_size: int = 1_000_000,
 ):
     house = House(win_rate=win_rate, tie_rate=tie_rate, return_on_investment=roi)
     return simulate_games(game_size, house, player)
 
 
 def simulate_martingale_system_player(
-        win_rate: float = 0.5,
-        tie_rate: float = 0,
-        roi: float = 1,
-        game_size: int = 1_000,
-        repetition: int = 10,
+    win_rate: float = 0.5,
+    tie_rate: float = 0,
+    roi: float = 1,
+    game_size: int = 1_000,
+    repetition: int = 10_000,
 ):
     players = [MartingaleSystemPlayer(budget=1_000_000) for _ in range(0, repetition)]
     return [
@@ -242,11 +242,11 @@ def simulate_martingale_system_player(
 
 
 def simulate_martingale_stoploss_player(
-        win_rate: float = 0.5,
-        tie_rate: float = 0,
-        roi: float = 1,
-        game_size: int = 1_000,
-        repetition: int = 10,
+    win_rate: float = 0.5,
+    tie_rate: float = 0,
+    roi: float = 1,
+    game_size: int = 1_000,
+    repetition: int = 10_000,
 ):
     players = [
         MartingaleSystemStopLossPlayer(budget=1_000_000) for _ in range(0, repetition)
@@ -257,11 +257,11 @@ def simulate_martingale_stoploss_player(
 
 
 def simulate_steady_one_player(
-        win_rate: float = 0.5,
-        tie_rate: float = 0,
-        roi: float = 1,
-        game_size: int = 1_000,
-        repetition: int = 10,
+    win_rate: float = 0.5,
+    tie_rate: float = 0,
+    roi: float = 1,
+    game_size: int = 1_000,
+    repetition: int = 10_000,
 ):
     players = [SteadyOnePlayer(budget=1_000_000) for _ in range(0, repetition)]
     return [
@@ -271,15 +271,23 @@ def simulate_steady_one_player(
 
 def simulate_multiple_rates(simulation_func, roi: float = 1):
     steps: int = 30
+    step: float = 0.01
+    initial_rate: float = 0.5
     win_rates = []
-    for _ in range(0, 2):
-        win_rates += [0.5 + (0.01 * x) for x in range(0, steps)]
-    return parmap.map(partial(simulation_func, roi=roi), win_rates, pm_pbar=True)
+    for _ in range(0, 10):
+        win_rates += [initial_rate + (step * x) for x in range(0, steps)]
+    return parmap.map(
+        partial(simulation_func, roi=roi),
+        win_rates,
+        pm_pbar={
+            "desc": f"Simulating {steps} steps of rates starting from {round(initial_rate, 2)}. (Each step being {round(step, 4)})"
+        },
+    )
 
 
 def _write_game_results_to_file(rates: list, player_name: str, roi: float):
     results = []
-    for rate in rates:
+    for rate in tqdm(rates, desc="Writing game results to file"):
         players = _load_players(player_name, roi, rate)
         print("=========================================")
         mvdds = [p.max_value_draw_down_pcnt for p in players]
@@ -346,39 +354,44 @@ def _write_game_results_to_file(rates: list, player_name: str, roi: float):
         "double_balance_game_length_std",
         "double_balance_game_length_mean",
     ]
+    directory = os.path.join("results", "stats", player_name)
+    filename = f"{player_name.replace(' ', '_')}_rate_50-80_roi_{roi}.csv"
     with open(
-            f"{datetime.today().strftime('%Y%m%d')}_{player_name.replace(' ', '_')}_rate_50-80_roi_{roi}.csv",
-            "w",
+        os.path.join(directory, filename),
+        "w",
     ) as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=headers)
         writer.writeheader()
         writer.writerows(results)
 
 
-def _write_game_balances_track_to_file(
-        rates: list, player_name: str, roi: float
-):
+def _to_balances_statistics(player_name: str, roi: float, rate: float, index: int):
+    balances = _load_balances(player_name, roi, rate, index)
+    return {
+        "sample_size": len(balances),
+        "index": index,
+        "min": np.min(balances),
+        "max": np.max(balances),
+        "mean": np.mean(balances),
+        "std": np.std(balances),
+    }
+
+
+def _write_game_balances_track_to_file(rates: list, player_name: str, roi: float):
     headers = ["index", "min", "max", "mean", "std"]
-    for rate in tqdm(rates):
+    for rate in tqdm(rates, desc="Writing game balances track to file."):
         path = os.path.join("game_balances", "raw")
         indexes = []
-        prefix = f"{player_name.replace(' ', '_')}_rate_{rate}_roi_{round(roi, 2)}_index_"
+        prefix = f"{player_name.replace(' ', '_')}_rate_{round(rate, 2)}_roi_{round(roi, 2)}_index_"
         for f in os.listdir(path):
             if f.startswith(prefix):
                 split_filename = f.split("_")
                 index: int = int(split_filename[-3])
                 indexes.append(index)
-        rows = [
-            {
-                "sample_size": len(b),
-                "index": i,
-                "min": np.min(b),
-                "max": np.max(b),
-                "mean": np.mean(b),
-                "std": np.std(b),
-            } for b in _load_balances(player_name, roi, rate, i) for i in indexes
-        ]
-        directory = "game_balances"
+        if not indexes:
+            return
+        rows = [_to_balances_statistics(player_name, roi, rate, i) for i in indexes]
+        directory = os.path.join("game_balances", "stats")
         if not os.path.exists(directory):
             os.makedirs(directory)
         filename = os.path.join(
@@ -386,8 +399,8 @@ def _write_game_balances_track_to_file(
             f"{player_name.replace(' ', '_')}_rate_{rate}_roi_{roi}_game_balances.csv",
         )
         with open(
-                filename,
-                "w",
+            filename,
+            "w",
         ) as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=headers)
             writer.writeheader()
@@ -395,81 +408,129 @@ def _write_game_balances_track_to_file(
 
 
 def simulate_and_save(
-        simulation_with_player_func,
-        roi: float,
-        player_name: str,
+    simulation_with_player_func,
+    roi: float,
+    player_name: str,
 ):
     simulation_results = simulate_multiple_rates(simulation_with_player_func, roi)
     rates = set()
-    for simulations in simulation_results:
+    rate_players_dict = {}
+    for simulations in tqdm(
+        simulation_results,
+        desc=f"Converting data produced from simulations of {player_name}",
+    ):
         for simulation in simulations:
             _house, _player, _balances = simulation
             win_rate = _house.win_rate
-            players = _load_players(player_name, roi, win_rate)
-            players.append(_player)
-            _save_players(player_name, roi, win_rate, players)
             rates.add(win_rate)
-            for index, balance in enumerate(_balances):
-                index_balances = _load_balances(player_name, roi, win_rate, index)
-                index_balances.append(balance)
-                _save_balances(player_name, roi, win_rate, index, index_balances)
-    _write_game_results_to_file([rates], player_name, roi)
-    _write_game_balances_track_to_file([rates], player_name, roi)
+            players = rate_players_dict.get(win_rate, [])
+            players.append(_player)
+            rate_players_dict[win_rate] = players
+            # for index, balance in enumerate(_balances):
+            #     index_balances = _load_balances(player_name, roi, win_rate, index)
+            #     index_balances.append(balance)
+            #     _save_index_balances(player_name, roi, win_rate, index, index_balances)
+    win_rates = [r for r, pl in rate_players_dict.items()]
+    parmap.map(
+        partial(
+            _save_players_from_dict,
+            player_name=player_name,
+            roi=roi,
+            rate_players_dict=rate_players_dict,
+        ),
+        win_rates,
+        pm_pbar={
+            "desc": f"Saving {len(win_rates)} rates of data produced from {player_name} simulations"
+        },
+    )
+    _write_game_results_to_file(list(rates), player_name, roi)
+    # _write_game_balances_track_to_file(list(rates), player_name, roi)
 
 
-def _get_saved_balances_filename(player_name: str, roi: float, win_rate: float, index: int):
-    directory = os.path.join("game_balances", "raw")
+def _save_players_from_dict(
+    win_rate: float, roi: float, player_name: str, rate_players_dict: dict
+):
+    _players = rate_players_dict.get(win_rate, [])
+    players = _load_players(player_name, roi, win_rate)
+    players += _players
+    _save_players(player_name, roi, win_rate, players)
+
+
+def _get_full_filepath(directory: str, filename: str):
     if not os.path.exists(directory):
         os.makedirs(directory)
     return os.path.join(
         directory,
-        f"{player_name.replace(' ', '_')}_rate_{win_rate}_roi_{round(roi, 2)}_index_{index}_game_balances",
+        filename,
     )
 
 
-def _save_balances(player_name: str, roi: float, win_rate: float, index: int, balances: list) -> None:
-    filename = _get_saved_balances_filename(player_name, roi, win_rate, index)
-    with open(filename, 'wb') as file:
-        pickle.dump(balances, file)
+def _save(filename: str, data):
+    with open(filename, "wb") as file:
+        pickle.dump(data, file)
 
 
-def _load_balances(player_name: str, roi: float, win_rate: float, index: int) -> list:
-    filename = _get_saved_balances_filename(player_name, roi, win_rate, index)
+def _load(filename: str, default=None):
     if not os.path.isfile(filename):
-        return []
-    with open(filename, 'rb') as file:
+        return [] if default is None else default
+    with open(filename, "rb") as file:
         return pickle.load(file)
 
 
+def _get_saved_index_balances_filename(
+    player_name: str, roi: float, win_rate: float, index: int
+):
+    win_rate_str = str(round(win_rate, 2))
+    roi_str = str(round(roi, 2))
+    directory = os.path.join(
+        "game_balances",
+        "raw",
+        "index_balances",
+        player_name,
+        f"roi_{roi_str}",
+        f"win_rate_{win_rate_str}",
+    )
+    filename = f"{player_name.replace(' ', '_')}_rate_{win_rate_str}_roi_{roi_str}_index_{index}_game_balances.pickle"
+    return _get_full_filepath(directory, filename)
+
+
+def _save_index_balances(
+    player_name: str, roi: float, win_rate: float, index: int, balances: list
+) -> None:
+    filename = _get_saved_index_balances_filename(player_name, roi, win_rate, index)
+    _save(filename, balances)
+
+
+def _load_balances(player_name: str, roi: float, win_rate: float, index: int) -> list:
+    filename = _get_saved_index_balances_filename(player_name, roi, win_rate, index)
+    return _load(filename)
+
+
 def _get_saves_players_filename(player_name: str, roi: float, win_rate: float) -> str:
-    directory = os.path.join("game_balances", "raw")
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-    return os.path.join(directory, f"{player_name.replace(' ', '_')}_rate_{round(win_rate, 2)}_roi_{roi}_game_balances")
+    win_rate_str = str(round(win_rate, 2))
+    roi_str = str(round(roi, 2))
+    directory = os.path.join("results", "players", player_name, f"roi_{roi_str}")
+    filename = f"{player_name.replace(' ', '_')}_rate_{win_rate_str}_roi_{roi_str}_players.pickle"
+    return _get_full_filepath(directory, filename)
 
 
 def _save_players(player_name: str, roi: float, win_rate: float, players: list) -> None:
     filename = _get_saves_players_filename(player_name, roi, win_rate)
-    with open(filename, 'wb') as file:
-        pickle.dump(players, file)
+    _save(filename, players)
 
 
 def _load_players(player_name: str, roi: float, win_rate: float) -> list:
     filename = _get_saves_players_filename(player_name, roi, win_rate)
-    print(f"player filename :: {filename}")
-    if not os.path.isfile(filename):
-        return []
-    with open(filename, 'rb') as file:
-        return pickle.load(file)
+    return _load(filename, [])
 
 
 def run_multiple_rates_on_player_and_roi(
-        _repetition: int,
-        _rate_index_balances_dict: dict,
-        _rate_player_dict: dict,
-        _simulation_function,
-        _roi: float,
-        _player_name: str,
+    _repetition: int,
+    _rate_index_balances_dict: dict,
+    _rate_player_dict: dict,
+    _simulation_function,
+    _roi: float,
+    _player_name: str,
 ):
     for index in range(0, _repetition):
         start_time: datetime = datetime.now()
@@ -478,8 +539,6 @@ def run_multiple_rates_on_player_and_roi(
             f"Attempt {attempt} @ {start_time} on {_simulation_function.__name__} with roi {_roi} ..."
         )
         simulate_and_save(
-            _rate_index_balances_dict,
-            _rate_player_dict,
             simulate_steady_one_player,
             _roi,
             _player_name,
@@ -490,11 +549,11 @@ def run_multiple_rates_on_player_and_roi(
 
 
 def run_multiple_rates_on_players_and_rois():
-    rois = [2]
+    rois = [1, 2, 3]
     simulation_functions = [
-        # simulate_martingale_system_player,
+        simulate_martingale_system_player,
         simulate_martingale_stoploss_player,
-        # simulate_steady_one_player,
+        simulate_steady_one_player,
     ]
     player_names: dict = {
         simulate_martingale_system_player: MartingaleSystemPlayer().name,
