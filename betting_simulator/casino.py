@@ -355,6 +355,8 @@ def _write_game_results_to_file(rates: list, player_name: str, roi: float):
         "double_balance_game_length_mean",
     ]
     directory = os.path.join("results", "stats", player_name)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
     filename = f"{player_name.replace(' ', '_')}_rate_50-80_roi_{roi}.csv"
     with open(
         os.path.join(directory, filename),
