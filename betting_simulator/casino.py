@@ -2,11 +2,11 @@ from datetime import datetime, timedelta
 from functools import partial
 
 import csv
+import json
 import os
 import random
 import numpy as np
 import parmap
-import pickle
 from tqdm import tqdm
 
 
@@ -285,59 +285,68 @@ def simulate_multiple_rates(simulation_func, roi: float = 1):
     )
 
 
+def _calculate_game_result(rate: float, player_name: str, roi: float):
+    players = _load_players(player_name, roi, rate)
+    print("=========================================")
+    mvdds = [p.max_value_draw_down_pcnt for p in players]
+    mvdd_min = round(np.min(mvdds), 4)
+    mvdd_max = round(np.max(mvdds), 4)
+    mvdd_std = round(np.std(mvdds), 4)
+    mvdd_mean = round(np.mean(mvdds), 4)
+    print(
+        f"@ rate[{round(rate, 4)}] with sample size[{len(mvdds)}] :: MVDD :: min[{mvdd_min}] max[{mvdd_max}] std[{mvdd_std}] mean[{mvdd_mean}]"
+    )
+    pnls = [((p.balance - p.initial_budget) / p.initial_budget) * 100 for p in players]
+    pnl_min = round(np.min(pnls), 4)
+    pnl_max = round(np.max(pnls), 4)
+    pnl_std = round(np.std(pnls), 4)
+    pnl_mean = round(np.mean(pnls), 4)
+    print(
+        f"@ rate[{round(rate, 4)}] with sample size[{len(pnls)}] :: PnL :: min[{pnl_min}] max[{pnl_max}] std[{pnl_std}] mean[{pnl_mean}]"
+    )
+    double_balance_game_lengths = sum(
+        [p.double_balance_game_lengths for p in players], []
+    )
+    if not double_balance_game_lengths:
+        double_balance_game_lengths.append(0)
+    double_balance_game_length_min = round(np.min(double_balance_game_lengths), 4)
+    double_balance_game_length_max = round(np.max(double_balance_game_lengths), 4)
+    double_balance_game_length_std = round(np.std(double_balance_game_lengths), 4)
+    double_balance_game_length_mean = round(np.mean(double_balance_game_lengths), 4)
+    double_balance_game_length_count = len(double_balance_game_lengths)
+    print(
+        f"@ rate[{round(rate, 4)}] with sample size[{len(pnls)}] :: Double game lengths :: min[{double_balance_game_length_min}] max[{double_balance_game_length_max}] std[{double_balance_game_length_std}] mean[{double_balance_game_length_mean}] count[{double_balance_game_length_count}]"
+    )
+    return {
+        "sample_size": len(mvdds),
+        "rate": round(rate, 4),
+        "mvdd_min": mvdd_min,
+        "mvdd_max": mvdd_max,
+        "mvdd_std": mvdd_std,
+        "mvdd_mean": mvdd_mean,
+        "pnl_min": pnl_min,
+        "pnl_max": pnl_max,
+        "pnl_std": pnl_std,
+        "pnl_mean": pnl_mean,
+        "double_balance_game_length_min": double_balance_game_length_min,
+        "double_balance_game_length_max": double_balance_game_length_max,
+        "double_balance_game_length_std": double_balance_game_length_std,
+        "double_balance_game_length_mean": double_balance_game_length_mean,
+    }
+
+
 def _write_game_results_to_file(rates: list, player_name: str, roi: float):
-    results = []
-    for rate in tqdm(rates, desc="Writing game results to file"):
-        players = _load_players(player_name, roi, rate)
-        print("=========================================")
-        mvdds = [p.max_value_draw_down_pcnt for p in players]
-        mvdd_min = round(np.min(mvdds), 4)
-        mvdd_max = round(np.max(mvdds), 4)
-        mvdd_std = round(np.std(mvdds), 4)
-        mvdd_mean = round(np.mean(mvdds), 4)
-        print(
-            f"@ rate[{round(rate, 4)}] with sample size[{len(mvdds)}] :: MVDD :: min[{mvdd_min}] max[{mvdd_max}] std[{mvdd_std}] mean[{mvdd_mean}]"
-        )
-        pnls = [
-            ((p.balance - p.initial_budget) / p.initial_budget) * 100 for p in players
-        ]
-        pnl_min = round(np.min(pnls), 4)
-        pnl_max = round(np.max(pnls), 4)
-        pnl_std = round(np.std(pnls), 4)
-        pnl_mean = round(np.mean(pnls), 4)
-        print(
-            f"@ rate[{round(rate, 4)}] with sample size[{len(pnls)}] :: PnL :: min[{pnl_min}] max[{pnl_max}] std[{pnl_std}] mean[{pnl_mean}]"
-        )
-        double_balance_game_lengths = sum(
-            [p.double_balance_game_lengths for p in players], []
-        )
-        if not double_balance_game_lengths:
-            double_balance_game_lengths.append(0)
-        double_balance_game_length_min = round(np.min(double_balance_game_lengths), 4)
-        double_balance_game_length_max = round(np.max(double_balance_game_lengths), 4)
-        double_balance_game_length_std = round(np.std(double_balance_game_lengths), 4)
-        double_balance_game_length_mean = round(np.mean(double_balance_game_lengths), 4)
-        double_balance_game_length_count = len(double_balance_game_lengths)
-        print(
-            f"@ rate[{round(rate, 4)}] with sample size[{len(pnls)}] :: Double game lengths :: min[{double_balance_game_length_min}] max[{double_balance_game_length_max}] std[{double_balance_game_length_std}] mean[{double_balance_game_length_mean}] count[{double_balance_game_length_count}]"
-        )
-        result = {
-            "sample_size": len(mvdds),
-            "rate": round(rate, 4),
-            "mvdd_min": mvdd_min,
-            "mvdd_max": mvdd_max,
-            "mvdd_std": mvdd_std,
-            "mvdd_mean": mvdd_mean,
-            "pnl_min": pnl_min,
-            "pnl_max": pnl_max,
-            "pnl_std": pnl_std,
-            "pnl_mean": pnl_mean,
-            "double_balance_game_length_min": double_balance_game_length_min,
-            "double_balance_game_length_max": double_balance_game_length_max,
-            "double_balance_game_length_std": double_balance_game_length_std,
-            "double_balance_game_length_mean": double_balance_game_length_mean,
-        }
-        results.append(result)
+    results = parmap.map(
+        partial(
+            _calculate_game_result,
+            player_name=player_name,
+            roi=roi,
+        ),
+        rates,
+        pm_pbar={
+            "desc": f"Calculating {len(rates)} results of {player_name} with roi {roi} to file"
+        },
+    )
     headers = [
         "sample_size",
         "rate",
@@ -468,15 +477,15 @@ def _get_full_filepath(directory: str, filename: str):
 
 
 def _save(filename: str, data):
-    with open(filename, "wb") as file:
-        pickle.dump(data, file)
+    with open(filename, "w") as file:
+        json.dump(data, file)
 
 
 def _load(filename: str, default=None):
     if not os.path.isfile(filename):
         return [] if default is None else default
-    with open(filename, "rb") as file:
-        return pickle.load(file)
+    with open(filename, "r") as file:
+        return json.load(file)
 
 
 def _get_saved_index_balances_filename(
@@ -492,7 +501,7 @@ def _get_saved_index_balances_filename(
         f"roi_{roi_str}",
         f"win_rate_{win_rate_str}",
     )
-    filename = f"{player_name.replace(' ', '_')}_rate_{win_rate_str}_roi_{roi_str}_index_{index}_game_balances.pickle"
+    filename = f"{player_name.replace(' ', '_')}_rate_{win_rate_str}_roi_{roi_str}_index_{index}_game_balances.json"
     return _get_full_filepath(directory, filename)
 
 
@@ -512,7 +521,7 @@ def _get_saves_players_filename(player_name: str, roi: float, win_rate: float) -
     win_rate_str = str(round(win_rate, 2))
     roi_str = str(round(roi, 2))
     directory = os.path.join("results", "players", player_name, f"roi_{roi_str}")
-    filename = f"{player_name.replace(' ', '_')}_rate_{win_rate_str}_roi_{roi_str}_players.pickle"
+    filename = f"{player_name.replace(' ', '_')}_rate_{win_rate_str}_roi_{roi_str}_players.json"
     return _get_full_filepath(directory, filename)
 
 
