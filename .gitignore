@@ -130,3 +130,5 @@ dmypy.json
 /.idea
 /input/
 /output/
+/betting_simulator/game_balances
+/betting_simulator/results/players
