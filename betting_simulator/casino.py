@@ -6,6 +6,7 @@ import json
 import os
 import random
 import numpy as np
+import pandas as pd
 import parmap
 from tqdm import tqdm
 
@@ -50,8 +51,6 @@ class Player:
         self.initial_budget: float = budget
         self.balance: float = budget
         self.target_balance: float = budget * 2
-        self.last_double_balanced_game: int = 0
-        self.double_balance_game_lengths = []
         self.min_balance: float
         self.max_balance: float
         self.last_bet: float = 0
@@ -71,6 +70,9 @@ class Player:
     def __str__(self):
         return str(self.__dict__)
 
+    def encode(self):
+        return self.__dict__
+
     def play(self, house: House):
         bet = self.bet(house.return_on_investment)
         result = house.play(bet)
@@ -85,8 +87,6 @@ class Player:
         self._update_max_value_draw_down()
         # game count
         self.games_played += 1
-        # break double game count tracker
-        self._track_double_balance()
 
     def _won(self):
         self.win += 1
@@ -121,14 +121,6 @@ class Player:
         self.max_value_draw_down_pcnt = min(
             draw_down_pcnt, self.max_value_draw_down_pcnt
         )
-
-    def _track_double_balance(self) -> None:
-        if self.balance < self.target_balance:
-            return
-        game_count_till_double: int = self.games_played - self.last_double_balanced_game
-        self.double_balance_game_lengths.append(game_count_till_double)
-        self.target_balance *= 2
-        self.last_double_balanced_game = self.games_played
 
     def _required_bet(self, roi: float = 1) -> float:
         pass
@@ -286,37 +278,21 @@ def simulate_multiple_rates(simulation_func, roi: float = 1):
 
 
 def _calculate_game_result(rate: float, player_name: str, roi: float):
-    players = _load_players(player_name, roi, rate)
-    print("=========================================")
-    mvdds = [p.max_value_draw_down_pcnt for p in players]
+    players_df: pd.DataFrame = _load_players(player_name, roi, rate)
+    mvdds = [p["max_value_draw_down_pcnt"] for index, p in players_df.iterrows()]
     mvdd_min = round(np.min(mvdds), 4)
     mvdd_max = round(np.max(mvdds), 4)
     mvdd_std = round(np.std(mvdds), 4)
     mvdd_mean = round(np.mean(mvdds), 4)
-    print(
-        f"@ rate[{round(rate, 4)}] with sample size[{len(mvdds)}] :: MVDD :: min[{mvdd_min}] max[{mvdd_max}] std[{mvdd_std}] mean[{mvdd_mean}]"
-    )
-    pnls = [((p.balance - p.initial_budget) / p.initial_budget) * 100 for p in players]
+    pnls = [
+        ((p["balance"] - p["initial_budget"]) / p["initial_budget"]) * 100
+        for index, p in players_df.iterrows()
+    ]
     pnl_min = round(np.min(pnls), 4)
     pnl_max = round(np.max(pnls), 4)
     pnl_std = round(np.std(pnls), 4)
     pnl_mean = round(np.mean(pnls), 4)
-    print(
-        f"@ rate[{round(rate, 4)}] with sample size[{len(pnls)}] :: PnL :: min[{pnl_min}] max[{pnl_max}] std[{pnl_std}] mean[{pnl_mean}]"
-    )
-    double_balance_game_lengths = sum(
-        [p.double_balance_game_lengths for p in players], []
-    )
-    if not double_balance_game_lengths:
-        double_balance_game_lengths.append(0)
-    double_balance_game_length_min = round(np.min(double_balance_game_lengths), 4)
-    double_balance_game_length_max = round(np.max(double_balance_game_lengths), 4)
-    double_balance_game_length_std = round(np.std(double_balance_game_lengths), 4)
-    double_balance_game_length_mean = round(np.mean(double_balance_game_lengths), 4)
-    double_balance_game_length_count = len(double_balance_game_lengths)
-    print(
-        f"@ rate[{round(rate, 4)}] with sample size[{len(pnls)}] :: Double game lengths :: min[{double_balance_game_length_min}] max[{double_balance_game_length_max}] std[{double_balance_game_length_std}] mean[{double_balance_game_length_mean}] count[{double_balance_game_length_count}]"
-    )
+
     return {
         "sample_size": len(mvdds),
         "rate": round(rate, 4),
@@ -328,10 +304,6 @@ def _calculate_game_result(rate: float, player_name: str, roi: float):
         "pnl_max": pnl_max,
         "pnl_std": pnl_std,
         "pnl_mean": pnl_mean,
-        "double_balance_game_length_min": double_balance_game_length_min,
-        "double_balance_game_length_max": double_balance_game_length_max,
-        "double_balance_game_length_std": double_balance_game_length_std,
-        "double_balance_game_length_mean": double_balance_game_length_mean,
     }
 
 
@@ -437,10 +409,6 @@ def simulate_and_save(
             players = rate_players_dict.get(win_rate, [])
             players.append(_player)
             rate_players_dict[win_rate] = players
-            # for index, balance in enumerate(_balances):
-            #     index_balances = _load_balances(player_name, roi, win_rate, index)
-            #     index_balances.append(balance)
-            #     _save_index_balances(player_name, roi, win_rate, index, index_balances)
     win_rates = [r for r, pl in rate_players_dict.items()]
     parmap.map(
         partial(
@@ -455,15 +423,16 @@ def simulate_and_save(
         },
     )
     _write_game_results_to_file(list(rates), player_name, roi)
-    # _write_game_balances_track_to_file(list(rates), player_name, roi)
 
 
 def _save_players_from_dict(
     win_rate: float, roi: float, player_name: str, rate_players_dict: dict
 ):
-    _players = rate_players_dict.get(win_rate, [])
-    players = _load_players(player_name, roi, win_rate)
-    players += _players
+    _players = pd.DataFrame.from_records(
+        [p.encode() for p in rate_players_dict.get(win_rate, [])]
+    )
+    players: pd.DataFrame = _load_players(player_name, roi, win_rate)
+    players = _players if players is None else pd.concat([players, _players])
     _save_players(player_name, roi, win_rate, players)
 
 
@@ -476,16 +445,14 @@ def _get_full_filepath(directory: str, filename: str):
     )
 
 
-def _save(filename: str, data):
-    with open(filename, "w") as file:
-        json.dump(data, file)
+def _save(filename: str, data_df: pd.DataFrame):
+    data_df.to_csv(filename, index=False, header=True)
 
 
-def _load(filename: str, default=None):
+def _load(filename: str, default=None) -> pd.DataFrame:
     if not os.path.isfile(filename):
-        return [] if default is None else default
-    with open(filename, "r") as file:
-        return json.load(file)
+        return None if default is None else default
+    return pd.read_csv(filename)
 
 
 def _get_saved_index_balances_filename(
@@ -501,7 +468,7 @@ def _get_saved_index_balances_filename(
         f"roi_{roi_str}",
         f"win_rate_{win_rate_str}",
     )
-    filename = f"{player_name.replace(' ', '_')}_rate_{win_rate_str}_roi_{roi_str}_index_{index}_game_balances.json"
+    filename = f"{player_name.replace(' ', '_')}_rate_{win_rate_str}_roi_{roi_str}_index_{index}_game_balances.csv"
     return _get_full_filepath(directory, filename)
 
 
@@ -512,7 +479,9 @@ def _save_index_balances(
     _save(filename, balances)
 
 
-def _load_balances(player_name: str, roi: float, win_rate: float, index: int) -> list:
+def _load_balances(
+    player_name: str, roi: float, win_rate: float, index: int
+) -> pd.DataFrame:
     filename = _get_saved_index_balances_filename(player_name, roi, win_rate, index)
     return _load(filename)
 
@@ -521,18 +490,22 @@ def _get_saves_players_filename(player_name: str, roi: float, win_rate: float) -
     win_rate_str = str(round(win_rate, 2))
     roi_str = str(round(roi, 2))
     directory = os.path.join("results", "players", player_name, f"roi_{roi_str}")
-    filename = f"{player_name.replace(' ', '_')}_rate_{win_rate_str}_roi_{roi_str}_players.json"
+    filename = (
+        f"{player_name.replace(' ', '_')}_rate_{win_rate_str}_roi_{roi_str}_players.csv"
+    )
     return _get_full_filepath(directory, filename)
 
 
-def _save_players(player_name: str, roi: float, win_rate: float, players: list) -> None:
+def _save_players(
+    player_name: str, roi: float, win_rate: float, players: pd.DataFrame
+) -> None:
     filename = _get_saves_players_filename(player_name, roi, win_rate)
     _save(filename, players)
 
 
-def _load_players(player_name: str, roi: float, win_rate: float) -> list:
+def _load_players(player_name: str, roi: float, win_rate: float) -> pd.DataFrame:
     filename = _get_saves_players_filename(player_name, roi, win_rate)
-    return _load(filename, [])
+    return _load(filename)
 
 
 def run_multiple_rates_on_player_and_roi(
